@@ -1,5 +1,7 @@
 # Delos puzzle
 
+Play: https://delos.sloprefinery.ai
+
 A Westworld-inspired prologue and word puzzle. First a tilt maze: guide a steel ball under glass to the goal pocket. Then 12 famous quotations, each one next word at a time, where you pick the word a language model would predict. A wrong guess costs "software stability". Finish all 12 and post your score to a global leaderboard.
 
 The candidate words and their probabilities are baked offline from an open model (see `bake` in `puzzle/quotes.json`; `train/bake_quotes.py` reproduces it on Apple silicon with `mlx-lm`). The page itself runs no model. Plain HTML, CSS and ES modules; no build step and no runtime dependencies besides vendored three.js.
