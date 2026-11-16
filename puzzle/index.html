@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark">
+  <script>try { const theme = localStorage.getItem('delos-quote-theme'); if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme; } catch {}</script>
+  <title>DELOS — Quote recall</title><link rel="icon" href="data:,"><link rel="stylesheet" href="../style.css">
+</head>
+<body class="puzzle-body">
+<a id="puzzle-skip" class="skip-link" href="#maze-canvas">Skip to puzzle</a>
+<main class="console puzzle-console">
+  <header class="topbar">
+    <span class="logo">DELOS</span>
+
+
+    <div id="puzzle-stability-box" class="puzzle-stability" hidden><label for="puzzle-meter">SOFTWARE STABILITY <span id="puzzle-stability">100%</span></label><meter id="puzzle-meter" min="0" max="100" value="100">100%</meter><span id="puzzle-instability" class="puzzle-instability" aria-live="polite"></span></div>
+    <button id="puzzle-mute" type="button" hidden aria-pressed="false" aria-label="Mute sound">♪</button><details class="puzzle-menu"><summary aria-label="Menu and theme">☰</summary><div class="puzzle-menu-content"><button id="maze-replay" type="button">Replay maze (unfinished quote restarts)</button><label><span class="sr-only">Theme</span><select id="puzzle-theme"><option value="dark">Dark</option><option value="light">Light</option></select></label></div></details>
+  </header>
+  <section id="maze" class="maze" aria-labelledby="maze-title">
+    <h1 id="maze-title">THE MAZE</h1>
+    <p>Guide the steel ball under the glass to the marked torso pocket. Move your cursor to tilt. On touch, drag. Closer to the center is gentler. Counter-tilt to brake. Move off the board or use Level to flatten it; the ball coasts to rest. Arrow keys also work; directional buttons and keys stay selected until changed.</p>
+    <div class="maze-surface"><canvas id="maze-canvas" tabindex="0" aria-label="Wooden tilt maze under glass. Guide the steel ball to the marked goal pocket." aria-describedby="maze-direction"></canvas><div id="maze-goal-label" class="maze-goal-annotation" aria-hidden="true" hidden><svg class="maze-goal-arrow"><path></path></svg><span class="maze-goal-label">GOAL</span></div></div>
+    <p id="maze-status" role="status" aria-live="polite">Loading maze…</p>
+    <p id="maze-direction" aria-live="polite">Tilt: level</p>
+    <div class="maze-controls" aria-label="Tilt controls"><button id="maze-up" type="button" aria-pressed="false">↑ Up</button><button id="maze-left" type="button" aria-pressed="false">← Left</button><button id="maze-level" type="button" aria-pressed="true">Level</button><button id="maze-right" type="button" aria-pressed="false">Right →</button><button id="maze-down" type="button" aria-pressed="false">Down ↓</button></div>
+    <div class="maze-controls"><button id="maze-zoom" type="button" aria-pressed="false">Zoom in</button><button id="maze-pause" type="button">Pause</button><button id="maze-reset" type="button">Reset</button><button id="maze-retry" type="button" hidden>Retry</button></div>
+  </section>
+  <section id="maze-dialogue" class="maze-dialogue" hidden aria-live="polite"><h1>There's something I'd like you to try</h1><button id="maze-continue" type="button">Continue</button></section>
+  <section id="puzzle-play" class="puzzle-play" aria-labelledby="puzzle-tree-title" aria-busy="true" hidden>
+    <div class="puzzle-tree-rail"><h2 id="puzzle-tree-title">DIALOGUE TREE</h2><h1 id="puzzle-heading" class="puzzle-micro">QUOTE RECALL / LOADING</h1><nav id="puzzle-levels" class="puzzle-levels" aria-label="Campaign levels"></nav></div>
+    <p id="puzzle-sentence" class="puzzle-sentence"></p>
+    <div class="puzzle-breadcrumb" aria-label="Processing stages"><span>KNOWLEDGE BASE</span><i>‹·›</i><span>INFERENCE ENGINE</span><i>‹·›</i><span>PROCESS</span><i>‹·›</i><strong>DIALOGUE TREE</strong></div>
+    <div class="puzzle-workspace">
+      <div id="puzzle-stage" class="puzzle-stage">
+        <div id="puzzle-scroll" class="puzzle-tree-scroll" tabindex="-1">
+          <div id="puzzle-tree" class="puzzle-tree"><svg id="puzzle-paths" class="puzzle-paths" aria-hidden="true"></svg><div id="puzzle-nodes"></div></div>
+        </div>
+        <div id="puzzle-shutdown" class="puzzle-shutdown" role="alert" hidden><span class="puzzle-micro">CRITICAL FAILURE / HOST OFFLINE</span><h2>SOFTWARE<br>INSTABILITY</h2><strong>0%</strong><span class="puzzle-tear" aria-hidden="true"></span><label for="puzzle-reboot">REBOOTING…</label><progress id="puzzle-reboot" max="1200" value="0">REBOOTING…</progress></div>
+        <span id="puzzle-popup" class="puzzle-popup" aria-hidden="true" hidden></span>
+      </div>
+      <aside class="puzzle-inspector" aria-labelledby="puzzle-inspector-title">
+        <h2 id="puzzle-inspector-title">RECALL SESSION</h2>
+        <div id="puzzle-idle" class="puzzle-idle"></div>
+        <h3 id="puzzle-inspect-word">—</h3>
+        <div id="puzzle-pieces" class="puzzle-pieces"></div>
+        <p id="puzzle-inspect-ids" class="puzzle-micro"></p>
+        <div id="puzzle-host" class="puzzle-host" hidden><span class="puzzle-micro">HOST PREDICTED</span><p id="puzzle-host-word"></p></div>
+        <div class="puzzle-feedback"><p id="puzzle-status" role="status" aria-live="polite" aria-atomic="true">Loading quotations…</p><button id="puzzle-retry" type="button" hidden>Retry</button></div>
+      </aside>
+    </div>
+    <section id="puzzle-victory" class="puzzle-victory" aria-labelledby="puzzle-victory-title" hidden>
+      <h2 id="puzzle-victory-title" tabindex="-1">SEQUENCE COMPLETE</h2>
+      <p id="puzzle-attribution" class="puzzle-attribution"></p>
+      <div class="puzzle-result"><span id="puzzle-score"></span><strong id="puzzle-rank"></strong></div>
+      <div id="puzzle-confidence" class="puzzle-confidence" aria-label="Per-word host confidence"></div>
+      <div id="puzzle-summary" class="puzzle-summary" hidden></div>
+      <div id="puzzle-finale-action" class="puzzle-end" hidden>
+        <p id="puzzle-maze-time" class="puzzle-micro"></p>
+        <form id="puzzle-score-form"><label for="puzzle-name">NAME</label><input id="puzzle-name" name="name" maxlength="16" required autocomplete="off" pattern="[A-Za-z0-9 _\-]{1,16}" title="1 to 16 letters, digits, spaces, _ or -"><button id="puzzle-score-submit" type="submit">Submit score</button></form>
+        <p id="puzzle-board-status" role="status" aria-live="polite"></p>
+        <ol id="puzzle-board" class="puzzle-board"></ol>
+      </div>
+      <button id="puzzle-next" type="button" hidden>Next level</button>
+      <button id="puzzle-replay" type="button" hidden>Replay level</button>
+    </section>
+  </section>
+  <noscript><p>This quote game needs JavaScript.</p></noscript>
+</main>
+<script type="module" src="./bootstrap.js"></script>
+</body>
+</html>

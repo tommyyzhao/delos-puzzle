@@ -1,0 +1,10 @@
+# Cloudflare Pages project. Build the site first: sh deploy/build.sh (fresh output dir deploy/dist).
+name = "delos-puzzle"
+pages_build_output_dir = "deploy/dist"
+compatibility_date = "2025-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "delos-puzzle"
+# Replace with the id printed by `wrangler d1 create delos-puzzle`. Not a secret, but account-specific.
+database_id = "00000000-0000-0000-0000-000000000000"
