@@ -10,7 +10,7 @@ export function createMazeView({ onWin, makeRenderer = loadMazeRenderer }) {
   const $ = id => document.getElementById(`maze-${id}`);
   const canvas = $('canvas'), status = $('status'), retry = $('retry'), pause = $('pause');
   const listeners = [], directions = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0], level: [0, 0] };
-  let geometry, state, renderer, frame = 0, last = 0, elapsed = 0, paused = false, failed = false, disposed = false, request = 0, tilt = { x: 0, y: 0 };
+  let geometry, state, renderer, frame = 0, last = 0, elapsed = 0, ticks = 0, paused = false, failed = false, disposed = false, request = 0, tilt = { x: 0, y: 0 };
   let pointer = null, touchId = null, directionText = '', pressed = '';
   let zoomed = matchMedia('(max-width: 600px)').matches;
   function listen(node, type, fn, options) { node.addEventListener(type, fn, options); listeners.push(() => node.removeEventListener(type, fn, options)); }
