@@ -2,9 +2,11 @@
 
 Play: https://delos.sloprefinery.ai
 
-A Westworld-inspired prologue and word puzzle. First a tilt maze: guide a steel ball under glass to the goal pocket. Then 12 famous quotations, each one next word at a time, where you pick the word a language model would predict. A wrong guess costs "software stability". Finish all 12 and post your score to a global leaderboard.
+A Westworld-inspired word puzzle. Twelve famous quotations, each one next word at a time, where you pick the word a language model would predict. Hamlet's "To be, or not to be" comes first. A wrong guess costs "software stability". Finish all 12 and post your score to a global leaderboard.
 
-The candidate words and their probabilities are baked offline from an open model (see `bake` in `puzzle/quotes.json`; `train/bake_quotes.py` reproduces it on Apple silicon with `mlx-lm`). The page itself runs no model. Plain HTML, CSS and ES modules; no build step and no runtime dependencies besides vendored three.js.
+The tilt maze is a separate project: https://maze.tz.mt (repo `tommyyzhao/delos-maze`).
+
+The candidate words and their probabilities are baked offline from an open model (see `bake` in `puzzle/quotes.json`; `train/bake_quotes.py` reproduces it on Apple silicon with `mlx-lm`). The page itself runs no model. Plain HTML, CSS and ES modules; no build step and no runtime dependencies.
 
 ## Play locally
 
@@ -47,4 +49,4 @@ The site is served at `/quotes/`; `/` redirects there.
 
 ## Credits
 
-[three.js](https://threejs.org) (MIT), vendored in `puzzle/vendor/three/`, renders the maze. Quotations belong to their authors and are used as short excerpts.
+Quotations belong to their authors and are used as short excerpts.

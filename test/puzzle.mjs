@@ -3,10 +3,10 @@ import { runInNewContext } from 'node:vm';
 import { existsSync, readFileSync } from 'node:fs';
 import { validateQuotes, createState, reduce, choicesFor, perfectScore, rankFor, RESTART_MS, VICTORY_BEATS } from '../puzzle/game.mjs';
 
-const ids = ['fortuna', 'cogito', 'stage', 'fear', 'liberty', 'apollo', 'socrates', 'gettysburg', 'dickens', 'jfk', 'caesar', 'violent'];
+const ids = ['hamlet', 'cogito', 'stage', 'fear', 'liberty', 'apollo', 'socrates', 'gettysburg', 'dickens', 'jfk', 'caesar', 'violent'];
 const counts = [1, 2, 1, 3, 4, 5, 4, 3, 6, 8, 8, 3];
 const texts = [
-  'Hija de la Fortuna', 'I think, therefore I am.', "All the world's a stage.",
+  'To be, or not to be.', 'I think, therefore I am.', "All the world's a stage.",
   'The only thing we have to fear is fear itself.', 'Give me liberty, or give me death!',
   "That's one small step for man, one giant leap for mankind.", 'The unexamined life is not worth living.',
   '…government of the people, by the people, for the people.',
@@ -122,7 +122,7 @@ if (existsSync(realPath)) {
   const real = validateQuotes(JSON.parse(readFileSync(realPath, 'utf8')));
   assert.deepEqual(real.levels.map(level => level.id), ids);
   assert.deepEqual(real.levels.map(level => level.steps.length), counts);
-  assert.deepEqual(real.levels[0].attribution, { speaker: 'Isabel Allende', work: 'Hija de la Fortuna', year: '1999' });
+  assert.deepEqual(real.levels[0].attribution, { speaker: 'William Shakespeare', work: 'Hamlet', year: 'c. 1600' });
   assert.equal(real.levels[0].steps[0].candidates.length, 11);
   assert.deepEqual(real.levels.map(level => level.prefix + level.steps.map(step => ` ${step.gold.word}${step.after}`).join('')), texts);
   for (const level of real.levels) for (const step of level.steps) {
@@ -176,7 +176,7 @@ const saved = {};
 for (const key of ['document', 'ResizeObserver', 'matchMedia', 'fetch', 'localStorage', 'setTimeout', 'clearTimeout', 'addEventListener', 'removeEventListener', 'performance', 'AudioContext']) saved[key] = globalThis[key];
 let now = 0, nextTimer = 1, reduced = false, failFetch = false, audioCreated = 0, resumed = 0;
 let controllerFixture = largeFixture;
-const scoreCalls = []; let scoreReply = init => ({ ok: true, json: async () => init ? { ok: true, rank: 3, top: [{ name: 'Dolores', total: 5, mazeMs: 61000 }, { name: '<b>x</b>', total: 4, mazeMs: null }] } : { top: [{ name: 'Teddy', total: 9, mazeMs: 90000 }] } });
+const scoreCalls = []; let scoreReply = init => ({ ok: true, json: async () => init ? { ok: true, rank: 3, top: [{ name: 'Dolores', total: 5 }, { name: '<b>x</b>', total: 4 }] } : { top: [{ name: 'Teddy', total: 9 }] } });
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const clock = new Map();
 function advance(ms) {
@@ -231,15 +231,15 @@ assert.equal(controller.state.phase, 'complete'); advance(3500);
 await flush();
 assert.equal(document.activeElement, $('victory-title')); assert.equal($('finale-action').hidden, false); assert.equal($('score-form').hidden, false);
 assert.equal($('finale-action').querySelector('a'), null, 'no outbound link'); assert(!/https?:\/\/(?!www\.w3\.org)/.test(app), 'no hard-coded URLs');
-assert.equal($('maze-time').textContent, 'MAZE TIME / —'); assert.equal($('summary').children.length, ids.length + 1);
-assert.deepEqual($('board').children.map(row => row.children.map(cell => cell.textContent)), [['Teddy', '9', '1:30']]);
+assert.equal($('summary').children.length, ids.length + 1);
+assert.deepEqual($('board').children.map(row => row.children.map(cell => cell.textContent)), [['Teddy', '9']]);
 assert.equal(scoreCalls.at(-1)[0], '/api/scores');
 // Submit: bad name stays local; valid name posts per-level scores, shows returned board via textContent.
 $('name').value = 'bad!name'; $('score-form').fire('submit'); await flush(); assert.equal(scoreCalls.length, 1); assert.equal(document.activeElement, $('name'));
 $('name').value = ' Dolores '; $('score-form').fire('submit'); await flush();
 const post = JSON.parse(scoreCalls.at(-1)[1].body); assert.equal(scoreCalls.at(-1)[1].method, 'POST');
-assert.equal(post.name, 'Dolores'); assert.deepEqual(Object.keys(post.levels), ids); assert(Object.values(post.levels).every(Number.isInteger)); assert.equal(post.mazeMs, null);
-assert.equal($('score-form').hidden, true); assert.equal($('board-status').textContent, 'SUBMITTED / RANK #3'); assert.equal($('board').children[1].children[0].textContent, '<b>x</b>'); assert.equal($('board').children[1].children[2].textContent, '—');
+assert.equal(post.name, 'Dolores'); assert.deepEqual(Object.keys(post.levels), ids); assert(Object.values(post.levels).every(Number.isInteger)); assert(!('mazeMs' in post), 'no maze time sent');
+assert.equal($('score-form').hidden, true); assert.equal($('board-status').textContent, 'SUBMITTED / RANK #3'); assert.equal($('board').children[1].children[0].textContent, '<b>x</b>'); assert.equal($('board').children[1].children.length, 2);
 assert.equal(document.activeElement, $('next'));
 controller.start(10); assert.equal($('finale-action').hidden, true, 'end screen only after the finale');
 controller.start(9); clickGold();
@@ -261,15 +261,19 @@ for (const fixtureData of [fixture, largeFixture]) {
  assert.equal(chips.length, fixtureData.levels[0].steps[0].candidates.length + 1);
  chips.find(chip => chip.dataset.word === gold(game.state)).fire('click', { detail: 1 }); assert.equal(game.state.phase, 'won'); game.dispose();
 }
-globalThis.localStorage = { getItem(key) { return key === 'delos-quote-best' ? JSON.stringify({ hamlet: { score: 600, rank: 'S' } }) : null; }, setItem() {} };
+// Stale saved state from the old Fortuna campaign must neither satisfy nor complete the Hamlet campaign.
+const oldIds = ['fortuna', ...ids.slice(1)];
+globalThis.localStorage = { getItem(key) { return key === 'delos-quote-best' ? JSON.stringify({ fortuna: { score: 600, rank: 'S' } }) : null; }, setItem() {} };
 const oldWin = createController(); await oldWin.ready;
-assert.equal(oldWin.state.levelIndex, 0, 'saved Hamlet win does not complete Fortuna'); oldWin.dispose();
-const partial = Object.fromEntries(ids.slice(1).map(id => [id, { score: 100, rank: 'S' }]));
+assert.equal(oldWin.state.levelIndex, 0, 'saved Fortuna win does not satisfy Hamlet');
+assert.equal($('levels').children.length, ids.length); assert.equal($('levels').children[1].disabled, true, 'stale id does not unlock level 2'); oldWin.dispose();
+const partial = Object.fromEntries(oldIds.map(id => [id, { score: 100, rank: 'S' }]));
 globalThis.localStorage = { getItem(key) { return key === 'delos-quote-best' ? JSON.stringify(partial) : null; }, setItem() {} };
 reduced = false; const missing = createController(); await missing.ready;
+assert.equal(missing.state.levelIndex, 0, 'stale ids leave Hamlet unwon');
 missing.start(11);
 while (missing.state.phase === 'choosing') { const col = $('nodes').children.find(node => Number(node.dataset.step) === missing.state.stepIndex); col.chips.find(chip => chip.dataset.word === gold(missing.state)).fire('click', { detail: 1 }); }
-advance(3500); assert.equal($('finale-action').hidden, true, 'last level cannot replace missing Fortuna');
+advance(3500); assert.equal($('finale-action').hidden, true, 'last level cannot complete the campaign while Hamlet is unwon');
 missing.start(0); $('nodes').children.find(node => node.dataset.step === '0').chips.find(chip => chip.dataset.word === gold(missing.state)).fire('click', { detail: 1 });
 const skipped = documentDouble.fire('keydown', { key: 'Enter' }); assert(skipped.defaultPrevented && skipped.stopped);
 await flush(); assert.equal($('finale-action').hidden, false); assert.equal(document.activeElement, $('victory-title'));

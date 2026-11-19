@@ -1,7 +1,6 @@
 import { validateQuotes, createState, reduce, choicesFor, RESTART_MS, VICTORY_BEATS } from './game.mjs';
 
-const MAZE_KEY = 'delos-maze-ms-v1', NAME = /^[A-Za-z0-9 _-]{1,16}$/;
-const clock = ms => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
+const NAME = /^[A-Za-z0-9 _-]{1,16}$/;
 const pct = value => `${(value * 100).toFixed(value < .001 ? 3 : 1)}%`;
 const storage = {
   get(key) { try { return localStorage.getItem(key); } catch { return null; } },
@@ -70,6 +69,10 @@ export function createController() {
   function muteLabel() { $('mute').textContent = muted ? '♪̸' : '♪'; $('mute').setAttribute('aria-label', muted ? 'Unmute sound' : 'Mute sound'); $('mute').setAttribute('aria-pressed', String(muted)); }
   muteLabel();
   $('theme').value = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+  listen($('theme'), 'change', event => {
+    document.documentElement.dataset.theme = event.target.value === 'light' ? 'light' : 'dark';
+    storage.set('delos-quote-theme', document.documentElement.dataset.theme);
+  });
   function levelTicks() {
     $('levels').replaceChildren();
     const firstUnwon = data.levels.findIndex(level => !best[level.id]);
@@ -273,24 +276,21 @@ export function createController() {
     const source = data.levels[state.levelIndex].attribution;
     return [source.speaker, source.work, source.year].filter(value => value !== null && value !== '').join(' / ');
   }
-  const mazeTime = () => { const ms = Number(storage.get(MAZE_KEY)); return Number.isInteger(ms) && ms >= 10000 && ms <= 7200000 ? ms : null; };
   function board(rows) {
     $('board').replaceChildren(...rows.map(row => {
       const item = el('li'); item.append(el('span', '', row.name), el('span', '', row.total.toLocaleString()));
-      if (row.mazeMs !== undefined) item.append(el('span', '', row.mazeMs === null ? '—' : clock(row.mazeMs)));
       return item;
     }));
   }
   async function endScreen() {
-    const run = ++endRun, ms = mazeTime();
+    const run = ++endRun;
     $('finale-action').hidden = false; $('score-form').hidden = false; $('board').replaceChildren(); $('board-status').textContent = 'Loading leaderboard…';
-    $('maze-time').textContent = `MAZE TIME / ${ms === null ? '—' : clock(ms)}`;
     try {
       const response = await fetch('/api/scores');
       const body = response.ok ? await response.json() : null;
       if (!Array.isArray(body?.top)) throw new Error('bad leaderboard');
       if (run !== endRun || disposed) return;
-      board(body.top); $('board-status').textContent = 'TOP 20 / name · score · maze time';
+      board(body.top); $('board-status').textContent = 'TOP 20 / name · score';
     } catch {
       if (run !== endRun || disposed) return;
       // ponytail: offline fallback lists local bests only; no retry button, replay the level to try again.
@@ -306,7 +306,7 @@ export function createController() {
     const run = endRun; $('score-submit').disabled = true; $('board-status').textContent = 'Submitting…';
     try {
       const levels = Object.fromEntries(data.levels.map(level => [level.id, Math.round(best[level.id].score)]));
-      const response = await fetch('/api/scores', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, levels, mazeMs: mazeTime() }) });
+      const response = await fetch('/api/scores', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, levels }) });
       const body = await response.json().catch(() => ({}));
       if (run !== endRun || disposed) return;
       if (!response.ok || !body.ok) throw new Error(body.error || `HTTP ${response.status}`);

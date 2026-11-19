@@ -881,23 +881,8 @@ footer { display:flex; gap:18px; flex-wrap:wrap; justify-content:space-between; 
 .puzzle-play[data-phase=won] .puzzle-workspace,.puzzle-play[data-phase=complete] .puzzle-workspace { grid-template-columns:minmax(0,1fr); flex:1; margin-bottom:0 }
 .puzzle-stage>.puzzle-victory { margin:18px; align-self:start }
 @media(max-width:799px) { .puzzle-stage>.puzzle-victory { margin:10px 0 } .puzzle-victory h2 { font-size:23px } .puzzle-confidence { gap:8px } .puzzle-result strong { font-size:64px } }
-.maze,.maze-dialogue { text-align:center; display:flex; flex-direction:column; align-items:center; gap:10px; margin:auto; width:100% }
-.maze[hidden],.maze-dialogue[hidden],.puzzle-play[hidden],.puzzle-stability[hidden] { display:none }
-.maze h1,.maze p { margin:0 }
-.puzzle-console .maze h1 { flex:none; min-width:0; font-size:24px }
-.maze-surface { position:relative; width:min(82vw, 62svh, 620px); max-width:100%; aspect-ratio:1 }
-.maze canvas { display:block; width:100%; height:100%; touch-action:none; border:1px solid var(--line) }
-.maze-goal-annotation { position:absolute; inset:0; pointer-events:none }
-.maze-goal-annotation[hidden] { display:none }
-.maze-goal-arrow { position:absolute; inset:0; width:100%; height:100%; overflow:hidden; fill:none; stroke:#153e37; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; filter:drop-shadow(0 0 2px #fff5d9) }
-.maze-goal-label { position:absolute; padding:2px 4px; border:1px solid #315a4c; border-radius:2px; background:#fff1ce; color:#173c32; font:700 12px/1.3 sans-serif }
-@media(forced-colors:active) { .maze-goal-label { background:Canvas; color:CanvasText; border:1px solid CanvasText } .maze-goal-arrow { stroke:CanvasText; filter:none } }
-.maze-controls { display:flex; justify-content:center; flex-wrap:wrap; gap:8px }
-.maze-controls button,.maze-dialogue button { min-width:88px; min-height:44px }
-.maze-controls button[aria-pressed="true"] { background:#764821; color:#fff8e8; border-color:#d4a16a }
-.maze #maze-direction { font-weight:700 }
+.puzzle-play[hidden],.puzzle-stability[hidden] { display:none }
 .puzzle-finale > * { flex-shrink:0 }
-@media(max-width:600px) { .maze-controls button { min-width:64px } .maze-surface { width:min(92vw, 55svh) } }
 .puzzle-finale { position:fixed; inset:0; z-index:100; margin:0; overflow:auto; display:flex; flex-direction:column; align-items:center; text-align:center; padding:clamp(20px,5vh,48px); background:var(--panel); border:0 }
 .puzzle-finale #puzzle-finale-action { display:flex; flex-direction:column; align-items:center; gap:12px; width:min(100%,520px) }
 .puzzle-finale #puzzle-finale-action[hidden] { display:none }
@@ -912,7 +897,7 @@ footer { display:flex; gap:18px; flex-wrap:wrap; justify-content:space-between; 
 .puzzle-board li:before { content:counter(rank); color:var(--muted) }
 .puzzle-board li span:first-child { overflow-wrap:anywhere }
 @media(prefers-reduced-motion:reduce) { .puzzle-finale *,.puzzle-finale *:before,.puzzle-finale *:after { animation:none!important; transition:none!important; scroll-behavior:auto!important } }
-@media(forced-colors:active) { .puzzle-finale * { text-shadow:none!important; box-shadow:none!important; clip-path:none!important } .maze canvas { border-color:CanvasText } }
+@media(forced-colors:active) { .puzzle-finale * { text-shadow:none!important; box-shadow:none!important; clip-path:none!important } }
 
 /* Context is the complete word chain, never a clipped tail. */
 .puzzle-tree { height:auto; min-height:610px }
