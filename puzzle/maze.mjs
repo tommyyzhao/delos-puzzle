@@ -1,12 +1,27 @@
 // Positions are SVG units; orientation is scene XY tilt (scene Y = -SVG Y).
+// Board model: pivot at the board centre, tilt vector e = theta * downhill (SVG axes),
+// board angular velocity w = de/dt. A solid sphere rolls without slipping on it.
 export const DT = 1 / 240;
 export const MM_PER_UNIT = 0.5;
 export const MAX_TILT = 30 * Math.PI / 180;
-export const MAX_TILT_RATE = 450 * Math.PI / 180;
 export const FLATNESS = 0.06;
-// ponytail: constrained solid-sphere rolling omits slip, jumps and rocking
-// inertia; use a rigid-body model only if those motions become necessary.
-const ROLLING_ACCELERATION = (5 / 7) * 9.80665 / (MM_PER_UNIT / 1000);
+export const GRAVITY = 9.80665;
+export const BALL_RADIUS = 6; // SVG units
+const METRES = MM_PER_UNIT / 1000; // metres per SVG unit
+const RIM = 371 * METRES; // farthest point of the board from the pivot
+// Largest tilt angular acceleration at which the board's own motion cannot lift a
+// resting ball anywhere on the board: N/m >= g*cos(MAX_TILT) - alpha*RIM = 0.1*g*cos(MAX_TILT).
+export const MAX_TILT_ACCEL = 0.9 * GRAVITY * Math.cos(MAX_TILT) / RIM;
+// Servo braking uses 90% of the limit so tracking error cannot overshoot the target.
+const BRAKE_ACCEL = 0.9 * MAX_TILT_ACCEL;
+const LINEAR_ZONE = 0.5; // fraction of the error closed per tick near the target: no chatter
+// ponytail: w = de/dt is taken as the board's in-plane angular velocity. A non-radial tilt path
+// also yaws the board (~(1-cos t)/t^2 (e x w), up to 1.2 rad/s under random full-range servo
+// play); test/maze-rigid.mjs measures the omitted term against a full 3-D rigid-body solve:
+// 0 for radial paths (exact at any tilt), <= 1.4 m/s^2 in acceleration (vs 4.9 m/s^2 drive at
+// 30 deg) and <= 0.7 m/s^2 in N/m worst case, mostly during fast direction reversals at high
+// tilt. Replace by a quaternion-rate state if that ever matters. Rolling slip, floor bounce and
+// spin about the board normal are also omitted.
 const SIN_TILT = Math.sin(MAX_TILT);
 // Tunable rolling-resistance approximation, not measured steel/wood data.
 export const ROLLING_RESISTANCE = 0.005;
@@ -74,7 +89,7 @@ export function parseMaze(text) {
         y: center.y + 360 * s + offset * s / 360 / normal };
     }));
   }
-  const geometry = { contours, center, radius: 6, spawn: { x: 746, y: 300 },
+  const geometry = { contours, center, radius: BALL_RADIUS, spawn: { x: 746, y: 300 },
     goal: { x: 435, y: 433, radius: 5 }, bounds: { width: 878, height: 806 }, extent: 371,
     segments: [], bins: new Map(), rows: new Map() };
   for (const contour of contours) for (let i = 0; i < contour.length; i++) {
@@ -130,31 +145,68 @@ export function clearance(g, p) {
   return solid(g, p) ? -d : d;
 }
 export function createState(g) {
-  return { x: g.spawn.x, y: g.spawn.y, vx: 0, vy: 0, angle: 0,
+  return { x: g.spawn.x, y: g.spawn.y, vx: 0, vy: 0, tilt: { x: 0, y: 0 }, tiltRate: { x: 0, y: 0 },
     orientation: [0, 0, 0, 1], won: false, error: null };
 }
 export function projectedGravity([x, y, z, w]) {
   // inverse(Q) * world down, with scene Y converted once to SVG Y.
   return { x: 2 * (w * y - x * z), y: 2 * (w * x + y * z) };
 }
-function advanceTilt(q, input) {
+// Exact acceleration (SVG units/s^2) of a solid sphere rolling without slip on the board.
+// p: ball position from the pivot (SVG units); v: velocity relative to the board (units/s);
+// tilt e (rad, downhill in SVG axes), tiltRate w = de/dt, tiltAccel = dw/dt.
+// a = 5/7 [g sin(t) e^ + (w.p) w] - r dw/dt   (Euler term has factor 1: rolling coupling cancels it)
+// normal = N/m in m/s^2 = g cos(t) - dw.p - r|w|^2 - 2 w.v; the ball leaves the floor when < 0.
+export function boardAcceleration({ p, v, tilt, tiltRate: w, tiltAccel: dw }) {
+  const theta = Math.hypot(tilt.x, tilt.y), slope = theta ? Math.sin(theta) / theta : 1;
+  const drive = GRAVITY / METRES * slope, centrifugal = w.x * p.x + w.y * p.y;
+  const ax = (5 / 7) * (drive * tilt.x + centrifugal * w.x) - BALL_RADIUS * dw.x;
+  const ay = (5 / 7) * (drive * tilt.y + centrifugal * w.y) - BALL_RADIUS * dw.y;
+  const normal = GRAVITY * Math.cos(theta) - METRES * ((dw.x * p.x + dw.y * p.y) +
+    2 * (w.x * v.x + w.y * v.y)) - BALL_RADIUS * METRES * (w.x * w.x + w.y * w.y);
+  return { ax, ay, normal };
+}
+// Time-optimal angular-acceleration-limited servo toward the input's tilt vector.
+// Sets s.tilt, s.tiltRate, s.orientation; returns the tick's angular acceleration dw/dt.
+function advanceTilt(s, input) {
   const magnitude = Math.hypot(input.x, input.y);
-  const half = Math.asin(SIN_TILT * Math.min(1, magnitude)) / 2;
-  const scale = magnitude ? Math.sin(half) / magnitude : 0;
-  const target = [input.y * scale, input.x * scale, 0, Math.cos(half)];
-  const angle = Math.acos(Math.max(-1, Math.min(1, q.reduce((sum, v, i) => sum + v * target[i], 0))));
-  if (angle < 1e-10) return target;
-  const t = Math.min(1 - Math.exp(-DT / 0.035), MAX_TILT_RATE * DT / (2 * angle));
-  const a = Math.sin((1 - t) * angle) / Math.sin(angle), b = Math.sin(t * angle) / Math.sin(angle);
-  const next = q.map((v, i) => a * v + b * target[i]);
-  const norm = Math.hypot(...next);
-  return next.map(v => v / norm);
+  const aim = magnitude ? Math.asin(SIN_TILT * Math.min(1, magnitude)) / magnitude : 0;
+  const ex = input.x * aim - s.tilt.x, ey = input.y * aim - s.tilt.y, error = Math.hypot(ex, ey);
+  const w0 = s.tiltRate;
+  if (error < 1e-12 && Math.hypot(w0.x, w0.y) < 1e-9) { // settled: snap, never creep
+    s.tilt = { x: input.x * aim, y: input.y * aim }; s.tiltRate = { x: 0, y: 0 };
+    s.orientation = orientationOf(s.tilt); return { x: -w0.x / DT, y: -w0.y / DT };
+  }
+  // Brake along sqrt(2 a e); the linear zone (half the error per tick) stops chatter at the target.
+  const speed = error ? Math.min(Math.sqrt(2 * BRAKE_ACCEL * error), LINEAR_ZONE * error / DT) : 0;
+  const want = { x: error ? ex / error * speed : 0, y: error ? ey / error * speed : 0 };
+  const theta0 = Math.hypot(s.tilt.x, s.tilt.y);
+  if (theta0 > 1e-9) { // never carry more outward rate than can be braked before the mechanical stop
+    const rx = s.tilt.x / theta0, ry = s.tilt.y / theta0, outward = want.x * rx + want.y * ry;
+    const safe = Math.sqrt(2 * BRAKE_ACCEL * Math.max(0, MAX_TILT - theta0));
+    if (outward > safe) { want.x -= (outward - safe) * rx; want.y -= (outward - safe) * ry; }
+  }
+  const limit = (dx, dy) => { // |dw|/DT <= MAX_TILT_ACCEL
+    const over = Math.hypot(dx, dy) / (MAX_TILT_ACCEL * DT);
+    return over > 1 ? [dx / over, dy / over] : [dx, dy];
+  };
+  const [dx, dy] = limit(want.x - w0.x, want.y - w0.y);
+  let w = { x: w0.x + dx, y: w0.y + dy }, x = s.tilt.x + w.x * DT, y = s.tilt.y + w.y * DT;
+  const theta = Math.hypot(x, y);
+  if (theta > MAX_TILT) { // mechanical stop: kill the outward rate, but never faster than the servo limit
+    x *= MAX_TILT / theta; y *= MAX_TILT / theta;
+    const radial = Math.max(0, (w.x * x + w.y * y) / MAX_TILT);
+    const [sx, sy] = limit(w.x - radial * x / MAX_TILT - w0.x, w.y - radial * y / MAX_TILT - w0.y);
+    w = { x: w0.x + sx, y: w0.y + sy };
+  }
+  s.tilt = { x, y }; s.tiltRate = w; s.orientation = orientationOf(s.tilt);
+  return { x: (w.x - w0.x) / DT, y: (w.y - w0.y) / DT };
 }
-function validOrientation(q) {
-  return Array.isArray(q) && q.length === 4 && q.every(Number.isFinite) &&
-    Math.abs(Math.hypot(...q) - 1) < 1e-8 && Math.abs(q[2]) < 1e-10 &&
-    q[3] >= Math.cos(MAX_TILT / 2) - 1e-10;
+function orientationOf({ x, y }) {
+  const theta = Math.hypot(x, y), k = theta ? Math.sin(theta / 2) / theta : 0;
+  return [y * k, x * k, 0, Math.cos(theta / 2)];
 }
+const vector = v => v && typeof v === 'object' && Number.isFinite(v.x) && Number.isFinite(v.y);
 function contact(g, s) {
   // Re-query after each correction so corners resolve against both walls.
   for (let k = 0; k < 12; k++) {
@@ -178,25 +230,29 @@ function contact(g, s) {
 export function step(g, s, input) {
   if (s.error || s.won) return s;
   if (!input || !finite(input) || Math.hypot(input.x, input.y) > 1 + 1e-9 ||
-      !['x', 'y', 'vx', 'vy', 'angle'].every(k => Number.isFinite(s[k])) || s.angle !== 0 ||
-      !validOrientation(s.orientation) || clearance(g, s) < g.radius - 0.02) {
+      !['x', 'y', 'vx', 'vy'].every(k => Number.isFinite(s[k])) ||
+      !vector(s.tilt) || !vector(s.tiltRate) || Math.hypot(s.tilt.x, s.tilt.y) > MAX_TILT + 1e-9 ||
+      clearance(g, s) < g.radius - 0.02) {
     s.error = 'Invalid physics state or tilt input'; return s;
   }
-  s.orientation = advanceTilt(s.orientation, input);
-  const gravity = projectedGravity(s.orientation);
-  const ax = ROLLING_ACCELERATION * gravity.x, ay = ROLLING_ACCELERATION * gravity.y;
-  const resistance = ROLLING_ACCELERATION * ROLLING_RESISTANCE *
-    Math.sqrt(Math.max(0, 1 - gravity.x ** 2 - gravity.y ** 2));
+  const tiltAccel = advanceTilt(s, input), { tilt, tiltRate } = s;
+  const accel = () => boardAcceleration({ p: { x: s.x - g.center.x, y: s.y - g.center.y },
+    v: { x: s.vx, y: s.vy }, tilt, tiltRate, tiltAccel });
+  const first = accel();
   // Bound actual travel, including acceleration, to 0.45 SVG/contact. Contacts
   // remove normal energy; no gameplay speed cap or geometry-dependent drag.
-  const count = Math.max(1, Math.ceil((Math.hypot(s.vx, s.vy) + Math.hypot(ax, ay) * DT) * DT / 0.45));
+  const count = Math.max(1, Math.ceil((Math.hypot(s.vx, s.vy) + Math.hypot(first.ax, first.ay) * DT) * DT / 0.45));
   if (!Number.isFinite(count) || count > MAX_CONTACT_STEPS) {
     s.error = 'Physics contact budget exceeded; reset required'; return s;
   }
   const h = DT / count;
   for (let i = 0; i < count; i++) {
     const before = { x: s.x, y: s.y };
+    const { ax, ay, normal } = i ? accel() : first;
     s.vx += ax * h; s.vy += ay * h;
+    // ponytail: when normal < 0 (fast flick + Coriolis) the ball is airborne by at most the 3 mm
+    // under the glass lid; keep the 2D model but apply no resistance. Add a hop state if needed.
+    const resistance = (5 / 7) * ROLLING_RESISTANCE * Math.max(0, normal) / METRES;
     // Dry resistance can stop, never reverse, the combined rolling velocity.
     const speed = Math.hypot(s.vx, s.vy), remaining = Math.max(0, speed - resistance * h);
     const factor = speed ? remaining / speed : 0;

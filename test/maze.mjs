@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
-import { parseMaze, createState, step, clearance, projectedGravity, DT, MM_PER_UNIT,
-  ROLLING_RESISTANCE, MAX_TILT, MAX_TILT_RATE, FLATNESS } from '../puzzle/maze.mjs';
+import { parseMaze, createState, step, clearance, projectedGravity, boardAcceleration, DT, MM_PER_UNIT,
+  ROLLING_RESISTANCE, MAX_TILT, MAX_TILT_ACCEL, GRAVITY, FLATNESS } from '../puzzle/maze.mjs';
 
 const start = performance.now();
 const source = readFileSync(new URL('../puzzle/maze.svg', import.meta.url), 'utf8');
@@ -55,8 +55,9 @@ assert(routeClearance > g.radius + Math.SQRT2 + FLATNESS);
 
 function valid(s) {
   assert.equal(s.error, null);
-  for (const k of ['x', 'y', 'vx', 'vy', 'angle']) assert(Number.isFinite(s[k]), k);
-  assert.equal(s.angle, 0, 'No in-plane spinning');
+  for (const k of ['x', 'y', 'vx', 'vy']) assert(Number.isFinite(s[k]), k);
+  assert(!('angle' in s), 'No in-plane spinning state');
+  assert(Math.hypot(s.tilt.x, s.tilt.y) <= MAX_TILT + 1e-12 && Number.isFinite(s.tiltRate.x + s.tiltRate.y));
   assert(s.orientation.every(Number.isFinite));
   assert(Math.abs(Math.hypot(...s.orientation) - 1) < 1e-12, 'Orientation remains unit length');
   assert.equal(s.orientation[2], 0, 'Tilt has no yaw component');
@@ -70,18 +71,24 @@ function hold(s, input, seconds) {
   for (let i = 0; i < Math.round(seconds / DT); i++) { step(g, s, input); valid(s); }
   return s;
 }
-const slope = degrees => [0, Math.sin(degrees * Math.PI / 360), 0, Math.cos(degrees * Math.PI / 360)];
+const settled = (state, degrees, bearing = 0) => { // board at rest at a static tilt (SVG downhill = bearing)
+  const t = degrees * Math.PI / 180; state.tilt = { x: t * Math.cos(bearing), y: t * Math.sin(bearing) };
+  state.tiltRate = { x: 0, y: 0 }; return state;
+};
 const rollingG = (5 / 7) * 9.80665 / 0.0005;
 assert.equal(MM_PER_UNIT / 1000, 0.0005, 'Rendered millimetres and physics metres share one scale');
 assert.equal(ROLLING_RESISTANCE, .005);
 const accelerations = [];
 for (const degrees of [1, 5, 15, 30]) {
   const radians = degrees * Math.PI / 180, input = { x: Math.sin(radians) / Math.sin(MAX_TILT), y: 0 };
-  const state = createState(g); state.orientation = slope(degrees);
+  const state = settled(createState(g), degrees);
+  step(g, state, input); valid(state);
   const gravity = projectedGravity(state.orientation);
   assert(Math.abs(gravity.x - Math.sin(radians)) < 1e-14, 'Raw tangential gravity has no max-angle normalization');
   assert.equal(gravity.y, 0);
-  step(g, state, input); valid(state);
+  const pure = boardAcceleration({ p: { x: 0, y: 0 }, v: { x: 0, y: 0 }, tilt: state.tilt, tiltRate: { x: 0, y: 0 }, tiltAccel: { x: 0, y: 0 } });
+  assert(Math.abs(pure.ax - (5 / 7) * 9.80665 * Math.sin(radians) / .0005) < 1e-6 && pure.ay === 0);
+  assert(Math.abs(pure.normal - 9.80665 * Math.cos(radians)) < 1e-12);
   const ideal = (5 / 7) * 9.80665 * Math.sin(radians) / .0005;
   const expected = ideal - rollingG * .005 * Math.cos(radians);
   assert(Math.abs(state.vx / DT - expected) < 1e-9, 'Solid sphere acceleration minus explicit normal-force resistance');
@@ -89,7 +96,7 @@ for (const degrees of [1, 5, 15, 30]) {
   accelerations.push({ degrees, ideal, net: state.vx / DT });
 }
 let s = createState(g), initial = structuredClone(s);
-s.orientation = slope(.1);
+settled(s, .1);
 hold(s, { x: Math.sin(Math.PI / 1800) / .5, y: 0 }, .25);
 assert.equal(s.vx, 0); assert.equal(s.x, g.spawn.x, 'Sub-resistance slope cannot propel uphill or jitter');
 s = createState(g);
@@ -100,21 +107,18 @@ hold(s, level, .5); assert.equal(s.vx, 0); assert.equal(s.vy, 0);
 const stopped = { ...s }; hold(s, level, 1); assert.deepEqual(s, stopped, 'Resistance stops without reversing');
 s = createState(g); s.vx = -400; step(g, s, level); valid(s);
 assert(s.vx < -399 && Math.abs(s.x - g.spawn.x) > 1.6, 'Ordinary velocity is not capped at 72 SVG/s');
-s = createState(g); s.x = 755; s.vx = -100; s.orientation = slope(5);
+s = settled(createState(g), 5); s.x = 755; s.vx = -100;
 for (let i = 0; i < 12; i++) step(g, s, { x: Math.sin(Math.PI / 36) / .5, y: 0 });
-valid(s); assert(s.vx < 0 && s.vx > -40, 'Counter-tilt brakes existing momentum');
+valid(s); assert(s.vx < 0 && s.vx > -45, 'Counter-tilt brakes existing momentum');
 for (let i = 0; i < 12; i++) step(g, s, { x: Math.sin(Math.PI / 36) / .5, y: 0 });
 valid(s); assert(s.vx > 20, 'Continued counter-tilt reverses motion');
 for (const bad of [NaN, Infinity, '1', undefined, null, 0, {}, { x: 0 },
   { x: NaN, y: 0 }, { x: 0, y: Infinity }, { x: '1', y: 0 }, { x: 1, y: 1 }, { x: -2, y: 0 }]) {
   s = createState(g); step(g, s, bad); assert(s.error); assert(!s.won);
 }
-for (const [key, value] of [['vx', NaN], ['x', 850], ['angle', 0.1]]) {
+for (const [key, value] of [['vx', NaN], ['x', 850], ['tilt', undefined], ['tilt', { x: NaN, y: 0 }],
+  ['tilt', { x: .6, y: 0 }], ['tiltRate', null], ['tiltRate', { x: 0, y: Infinity }]]) {
   s = createState(g); s[key] = value; step(g, s, level); assert(s.error); assert(!s.won);
-}
-for (const orientation of [undefined, null, [0, 0, 0], [0, 0, 0, 0], [0, 0, 0, -1],
-  [0, 0, 0, 2], [NaN, 0, 0, 1], [0.3, 0, 0, Math.sqrt(0.91)], [0, 0, 0.01, Math.sqrt(0.9999)]]) {
-  s = createState(g); s.orientation = orientation; step(g, s, level); assert(s.error); assert(!s.won);
 }
 s = createState(g); s.x = 438; s.y = 330; step(g, s, level); assert(!s.won); valid(s);
 s = createState(g); s.x = g.center.x; s.y = g.center.y; step(g, s, level); assert(!s.won);
@@ -140,7 +144,7 @@ for (const p of [{ x: 538, y: 680 }, { x: 310, y: 614 }, { x: 214, y: 404 }, { x
 const highSpeedMilliseconds = performance.now() - highSpeedStart;
 s = createState(g); s.x = 786.4; s.y = 412; s.vy = 400;
 hold(s, { x: 1, y: 0 }, .03); assert(s.y > 423 && s.vy > 390, 'Wall preserves tangential velocity');
-const wallX = s.x; hold(s, { x: -1, y: 0 }, .04);
+const wallX = s.x; hold(s, { x: -1, y: 0 }, .4);
 assert(s.x < wallX - 1 && s.vx < 0, 'Counter-tilt leaves wall contact');
 s = createState(g); s.x = 786; s.y = 412; s.vx = 400;
 hold(s, level, .004); assert(s.vx < 0, 'Impact keeps existing low restitution');
@@ -148,33 +152,84 @@ s = createState(g); s.x = 435; s.y = 421; s.vy = 10000;
 step(g, s, level); valid(s); assert(s.won && s.y < 424, 'Fast goal crossing is caught inside a fixed tick');
 assert.deepEqual(createState(g), createState(g), 'Reset has no hidden global state');
 assert.deepEqual(projectedGravity([0, 0, 0, 1]), level);
+const rim = 371 * MM_PER_UNIT / 1000, liftBound = .9 * 9.80665 * Math.cos(MAX_TILT);
+assert(Math.abs(MAX_TILT_ACCEL * rim - liftBound) < 1e-9, 'Servo limit is the rim lift bound');
+const rimPoints = Array.from({ length: 16 }, (_, i) => ({ x: 371 * Math.cos(i * Math.PI / 8), y: 371 * Math.sin(i * Math.PI / 8) }));
+function servoRun(inputs, holdTicks) { // returns the full tilt history; ball is irrelevant to the servo
+  const state = createState(g), trace = []; let worstRim = 0, worstNormal = Infinity, worstTilt = 0;
+  for (const input of inputs) for (let i = 0; i < holdTicks; i++) {
+    const before = { ...state.tiltRate }; state.x = g.spawn.x; state.y = g.spawn.y; state.vx = state.vy = 0;
+    step(g, state, input); assert.equal(state.error, null);
+    const dw = { x: (state.tiltRate.x - before.x) / DT, y: (state.tiltRate.y - before.y) / DT };
+    worstRim = Math.max(worstRim, Math.hypot(dw.x, dw.y) * rim / liftBound);
+    worstTilt = Math.max(worstTilt, Math.hypot(state.tilt.x, state.tilt.y));
+    for (const p of rimPoints) worstNormal = Math.min(worstNormal, boardAcceleration({ p, v: { x: 0, y: 0 }, tilt: state.tilt, tiltRate: state.tiltRate, tiltAccel: dw }).normal);
+    trace.push([state.tilt.x, state.tilt.y, state.tiltRate.x, state.tiltRate.y]);
+  }
+  return { trace, worstRim, worstNormal, worstTilt };
+}
+let seed = 12345; const random = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+let servoWorstRim = 0, servoWorstNormal = Infinity, servoWorstTilt = 0;
+for (let run = 0; run < 2000; run++) {
+  const inputs = Array.from({ length: 8 }, () => {
+    const a = random() * 2 * Math.PI, m = random() < .5 ? 1 : random() < .2 ? 0 : random();
+    return { x: Math.cos(a) * m, y: Math.sin(a) * m };
+  }), ticks = 1 + Math.floor(random() * 40);
+  const first = servoRun(inputs, ticks);
+  if (run < 20) assert.deepEqual(servoRun(inputs, ticks), first, 'Servo is deterministic');
+  assert(first.worstRim <= 1 + 1e-9, `|dw| R <= 0.9 g cos(max): ${first.worstRim}`);
+  assert(first.worstNormal >= 0, `Resting ball never lifts: ${first.worstNormal}`);
+  assert(first.worstTilt <= MAX_TILT + 1e-12, 'Tilt bounded');
+  servoWorstRim = Math.max(servoWorstRim, first.worstRim); servoWorstNormal = Math.min(servoWorstNormal, first.worstNormal);
+  servoWorstTilt = Math.max(servoWorstTilt, first.worstTilt);
+}
 for (const input of [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 },
   { x: Math.SQRT1_2, y: Math.SQRT1_2 }, { x: -.3, y: .4 }]) {
   s = createState(g);
   for (let i = 0; i < 1 / DT; i++) {
-    const before = s.orientation;
     step(g, s, input); valid(s);
-    const dot = before.reduce((sum, v, j) => sum + v * s.orientation[j], 0);
-    assert(2 * Math.acos(Math.min(1, dot)) <= MAX_TILT_RATE * DT + 1e-10, 'Angular rate bounded');
     const [x, y, z, w] = s.orientation;
     const matrixDown = { x: -(2 * (x * z - y * w)), y: -(2 * (y * z + x * w)) };
     const force = projectedGravity(s.orientation);
     assert(Math.abs(force.x - matrixDown.x) < 1e-12);
     assert(Math.abs(force.y + matrixDown.y) < 1e-12);
-    assert(Math.hypot(force.x, force.y) <= .5 + 1e-12);
+    assert(Math.abs(Math.hypot(force.x, force.y) - Math.sin(Math.hypot(s.tilt.x, s.tilt.y))) < 1e-12, 'Orientation follows the tilt state');
   }
   const force = projectedGravity(s.orientation);
-  assert(Math.hypot(force.x - input.x * .5, force.y - input.y * .5) < 1e-6, 'Target uses same physical quaternion');
-  if (Math.abs(Math.hypot(input.x, input.y) - 1) < 1e-12) {
-    assert(Math.abs(2 * Math.acos(s.orientation[3]) - MAX_TILT) < 1e-7);
-  }
-  const before = s.orientation.slice(); hold(s, level, DT); assert(s.orientation[3] > before[3]);
-  hold(s, level, 1); assert(Math.hypot(...Object.values(projectedGravity(s.orientation))) < 1e-7);
+  assert(Math.hypot(force.x - input.x * .5, force.y - input.y * .5) < 1e-9, 'Servo settles on the same physical target');
+  assert.deepEqual(s.tiltRate, { x: 0, y: 0 }, 'Servo comes to rest, no chatter');
+  if (Math.abs(Math.hypot(input.x, input.y) - 1) < 1e-12) assert(Math.abs(Math.hypot(s.tilt.x, s.tilt.y) - MAX_TILT) < 1e-9);
+  hold(s, level, 1); assert(Math.hypot(...Object.values(projectedGravity(s.orientation))) < 1e-12 && s.tilt.x === 0 && s.tilt.y === 0);
 }
-s = createState(g); step(g, s, { x: 0, y: 1 });
-const firstForce = projectedGravity(s.orientation);
-assert(firstForce.y > 0 && firstForce.y < .1, 'Force follows actual mesh, not target angle');
-assert(Math.abs(s.vy / DT - rollingG * (firstForce.y - .005 * Math.sqrt(1 - firstForce.y ** 2))) < 1e-10);
+// Level board rotating at constant rate: a resting ball is thrown outward, (5/7) w^2 d, from the axis.
+for (const [w, d] of [[1, 10], [3, 100], [6.4, 371]]) {
+  const rest = { x: 0, y: 0 }, spin = { x: w * Math.SQRT1_2, y: w * Math.SQRT1_2 };
+  const out = boardAcceleration({ p: { x: d * Math.SQRT1_2, y: d * Math.SQRT1_2 }, v: rest, tilt: rest, tiltRate: spin, tiltAccel: rest });
+  assert(Math.abs(Math.hypot(out.ax, out.ay) - (5 / 7) * w * w * d) < 1e-9 && out.ax > 0 && out.ay > 0, 'Centrifugal (5/7) w^2 d, outward');
+  const onAxis = boardAcceleration({ p: { x: d * Math.SQRT1_2, y: -d * Math.SQRT1_2 }, v: rest, tilt: rest, tiltRate: spin, tiltAccel: rest });
+  assert(Math.hypot(onAxis.ax, onAxis.ay) < 1e-9, 'Nothing on the rotation axis');
+  assert(Math.abs(boardAcceleration({ p: rest, v: rest, tilt: rest, tiltRate: spin, tiltAccel: rest }).ax) < 1e-12);
+}
+// Euler term: angular acceleration pushes a resting ball with factor 1 (not 5/7) against the board's motion.
+{ const z = { x: 0, y: 0 }, a = boardAcceleration({ p: z, v: z, tilt: z, tiltRate: z, tiltAccel: { x: 20, y: 0 } });
+  assert(Math.abs(a.ax + 20 * g.radius) < 1e-9 && a.ay === 0); }
+// Step response of the servo (also recorded in the evidence folder).
+const response = (from, to) => {
+  const state = createState(g), aim = a => ({ x: Math.sin(a) / Math.sin(MAX_TILT), y: 0 });
+  for (let i = 0; i < 2000; i++) { step(g, state, aim(from)); state.x = g.spawn.x; state.y = g.spawn.y; state.vx = state.vy = 0; }
+  let t90 = null, settle = null, peak = 0, overshoot = 0;
+  for (let i = 1; i <= 2000; i++) {
+    step(g, state, aim(to)); state.x = g.spawn.x; state.y = g.spawn.y; state.vx = state.vy = 0;
+    const frac = (state.tilt.x - from) / (to - from);
+    if (t90 === null && frac >= .9) t90 = i * DT;
+    settle = Math.abs(frac - 1) < .01 ? settle ?? i * DT : null;
+    peak = Math.max(peak, Math.abs(state.tiltRate.x)); overshoot = Math.max(overshoot, (frac - 1) * (to - from));
+  }
+  return { fromDegrees: from * 180 / Math.PI, toDegrees: to * 180 / Math.PI, secondsTo90Percent: t90, secondsToSettle1Percent: settle,
+    peakRateDegreesPerSecond: peak * 180 / Math.PI, overshootDegrees: overshoot * 180 / Math.PI };
+};
+const rad = d => d * Math.PI / 180, responses = [response(0, MAX_TILT), response(0, rad(5)), response(-MAX_TILT, MAX_TILT)];
+for (const r of responses) assert(r.secondsToSettle1Percent < .5 && r.overshootDegrees < .1, JSON.stringify(r));
 function framed(hz) {
   const state = createState(g); state.vx = -1200; let accumulator = 0, ticks = 0;
   for (let frame = 0; frame < hz * 2; frame++) {
@@ -192,6 +247,7 @@ assert.deepEqual(framed(60), framed(144), 'High-speed fixed steps independent of
 // Recorded from route feedback through production physics, never positions or
 // forced wins. Quarter-second low-angle holds exercise fine pointer control;
 // this deterministic regression does not establish human timing tolerance.
+// The replay is regenerated by test/record-replay.mjs.
 const replay = JSON.parse(readFileSync(new URL('./maze-replay.json', import.meta.url), 'utf8'));
 function play() {
   const state = createState(g); let ticks = 0, minimumClearance = Infinity;
@@ -209,7 +265,9 @@ function play() {
 const first = play(), second = play(); assert.deepEqual(first, second, 'Fixed-input replay deterministic');
 assert(first.state.x >= 431 && first.state.x <= 440 && first.state.y >= 423 && first.state.y <= 440);
 const frozen = structuredClone(first.state); step(g, first.state, { x: 1, y: 0 }); assert.deepEqual(first.state, frozen);
-console.log(JSON.stringify({ accelerations, rollingResistance: ROLLING_RESISTANCE,
+console.log(JSON.stringify({ accelerations, rollingResistance: ROLLING_RESISTANCE, maxTiltAccelRadPerS2: MAX_TILT_ACCEL,
+  servo: { sequences: 2000, worstRimLiftFraction: servoWorstRim, worstRestingNormalMps2: servoWorstNormal,
+    worstTiltRadians: servoWorstTilt, responses },
   budgetMilliseconds, highSpeedMilliseconds, contours: g.contours.map(c => c.length), radius: g.radius,
   flatteningError: FLATNESS, spawnClearance: clearance(g, g.spawn), goalClearance: clearance(g, g.goal),
   reachableCells: count, routeNodes, routeClearance, replayClearance: first.minimumClearance,

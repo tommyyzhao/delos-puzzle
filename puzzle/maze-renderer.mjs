@@ -151,7 +151,7 @@ export function createMazeRenderer({ canvas, geometry: g, goalLabel, onContextLo
       previous = point.clone(); ball.position.copy(point); contact.position.x = point.x; contact.position.y = point.y;
       target.set(0, 0, 0); if (zoomed) target.copy(point).applyQuaternion(board.quaternion);
       const distance = radius * 1.16 / Math.tan(THREE.MathUtils.degToRad(18)) / (zoomed ? 2.1 : 1);
-      offset.set(0, -Math.sin(22 * Math.PI / 180) * distance, Math.cos(22 * Math.PI / 180) * distance);
+      offset.set(0, 0, distance); // directly overhead: tilt looks the same in every direction
       camera.position.copy(target).add(offset); camera.aspect = width / height; camera.lookAt(target); camera.updateProjectionMatrix(); camera.updateMatrixWorld();
       renderer.render(scene, camera);
       if (goalLabel) {

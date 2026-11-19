@@ -111,7 +111,7 @@ for (const inclination of [-1, -.5, 0, .5, 1]) for (const bearing of [0, Math.PI
   const quaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(Math.cos(bearing), Math.sin(bearing), 0), inclination * mazePhysics.MAX_TILT);
   const camera = new THREE.PerspectiveCamera(36, 1, 1, 2500); camera.up.set(0, 1, 0);
   const target = new THREE.Vector3(zoom > 1 ? 130 : 0, zoom > 1 ? 50 : 0, 0).applyQuaternion(quaternion), distance = 660 / zoom;
-  camera.position.copy(target).add(new THREE.Vector3(0, -Math.sin(22 * Math.PI / 180) * distance, Math.cos(22 * Math.PI / 180) * distance)); camera.lookAt(target); camera.updateProjectionMatrix(); camera.updateMatrixWorld();
+  camera.position.copy(target).add(new THREE.Vector3(0, 0, distance)); camera.lookAt(target); camera.updateProjectionMatrix(); camera.updateMatrixWorld();
   const neutral = projectBoardInput(camera, quaternion, rect, center.x, center.y); assert.equal(neutral.x, 0); assert.equal(neutral.y, 0);
   for (const [x, y] of [[1, 0], [-1, 0], [0, 1], [0, -1], [.6, .8]]) {
     const output = projectBoardInput(camera, quaternion, rect, center.x + x * 180, center.y + y * 180, true);
